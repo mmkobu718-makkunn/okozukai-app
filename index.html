@@ -760,7 +760,19 @@
   const GAS_URL   = 'https://script.google.com/macros/s/AKfycbw0sBRXbn0er1SLNiDMZCZmbtK5yPy6l1xg_Rx3XNOBtmDyxQiJhS3e83TzpGoau-aqyg/exec';
   // 簡易的な合言葉トークン（GAS側のスクリプトプロパティ APP_TOKEN と一致させること）
   // ※これは本格的な認証ではなく、URLを知らない第三者を防ぐための簡易的な対策です
-  const APP_TOKEN = '5688ee1bfb5824484f750c52ddb27dae';
+  // ソースコードに直書きせず、初回アクセス時に入力してもらいブラウザにだけ保存する
+  const TOKEN_KEY = 'okozukai_app_token';
+  function getAppToken() {
+    let token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      token = (prompt('合言葉を入力してください') || '').trim();
+      if (token) localStorage.setItem(TOKEN_KEY, token);
+    }
+    return token;
+  }
+  function resetAppToken() {
+    localStorage.removeItem(TOKEN_KEY);
+  }
 
   // ===== 全データをメモリ管理 =====
   let allEntries    = [];  // { id, date, name, amount, type }
@@ -769,7 +781,9 @@
   // ===== API通信 =====
   async function apiGet(url) {
     const res = await fetch(url, { redirect: 'follow' });
-    return res.json();
+    const data = await res.json();
+    checkAuthError(data);
+    return data;
   }
 
   async function apiPost(payload) {
@@ -777,10 +791,20 @@
     const res = await fetch(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...payload, token: APP_TOKEN }),
+      body: JSON.stringify({ ...payload, token: getAppToken() }),
       redirect: 'follow',
     });
-    return res.json();
+    const data = await res.json();
+    checkAuthError(data);
+    return data;
+  }
+
+  // 認証エラー時は保存済みの合言葉を破棄し、次回アクセス時に再入力してもらう
+  function checkAuthError(data) {
+    if (data && data.success === false && /認証エラー/.test(data.error || '')) {
+      resetAppToken();
+      alert('合言葉が正しくありません。ページを再読み込みして入力し直してください。');
+    }
   }
 
   // 日付をYYYY-MM-DD形式に統一（GASがDate文字列で返す場合に対応）
@@ -847,7 +871,7 @@
 
     try {
       // 1回のGETでエントリと繰越を両方取得
-      const data = await apiGet(GAS_URL + '?token=' + encodeURIComponent(APP_TOKEN));
+      const data = await apiGet(GAS_URL + '?token=' + encodeURIComponent(getAppToken()));
 
       allEntries = Array.isArray(data.entries) ? data.entries.map(normalizeEntry) : [];
 
